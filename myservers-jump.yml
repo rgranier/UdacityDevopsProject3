@@ -1,8 +1,8 @@
 Description: >
       Randall Granier / Udacity Course
       PROJECT 3:  Servers
-      ./create.sh Project3ServerStack myservers.yml myserverparams.json
-      ./update.sh Project3ServerStack myservers.yml myserverparams.json
+      ./create.sh JumpServerStack myservers-jump.yml myserverparams.json
+      ./update.sh JumpServerStack myservers-jump.yml myserverparams.json
 
 Parameters:
 
@@ -11,6 +11,11 @@ Parameters:
       Type: String
 
 Resources:
+  ProfileWithRolesForOurApp:
+    Type: AWS::IAM::InstanceProfile
+    Properties:
+      Roles:
+        - UdacityGranierEC2S3
   LBSecGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -49,6 +54,23 @@ Resources:
         FromPort: 0
         ToPort: 65535
         CidrIp: 0.0.0.0/0
+  JumpSecGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Allow SSH to Jump server only
+      VpcId:
+        Fn::ImportValue:
+          !Sub "${EnvironmentName}-VPCID"
+      SecurityGroupIngress:
+      - IpProtocol: tcp
+        FromPort: 22
+        ToPort: 22
+        CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+      - IpProtocol: tcp
+        FromPort: 0
+        ToPort: 65535
+        CidrIp: 0.0.0.0/0
 
   WebAppLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
@@ -57,13 +79,21 @@ Resources:
         Fn::Base64: !Sub |
           #!/bin/bash
           export DEBIAN_FRONTEND=noninteractive
-          apt-get update
-          echo "Success!" >> /etc/motd
+          apt-get update -y
+          apt-get install unzip awscli -y
+          apt-get install apache2 -y
+          systemctl start apache2.service
+          cd /var/www/html
+          cp index.html index.html.orig
+          aws s3 cp s3://granier-demosites/demosite.zip .
+          unzip -o demosite.zip
+          echo "$(date) Success building WebApp Launch Config" >> /tmp/status.txt
       ImageId: ami-005bdb005fb00e791
+      IamInstanceProfile: !Ref ProfileWithRolesForOurApp
       KeyName: GranierConsulting
       SecurityGroups:
       - Ref: WebServerSecGroup
-      InstanceType: t3.medium
+      InstanceType: t2.micro
       BlockDeviceMappings:
       - DeviceName: "/dev/sdk"
         Ebs:
@@ -77,10 +107,40 @@ Resources:
           !Sub "${EnvironmentName}-PRIV-NETS"
       LaunchConfigurationName:
         Ref: WebAppLaunchConfig
-      MinSize: '3'
-      MaxSize: '5'
+      MinSize: '1'
+      MaxSize: '1'
       TargetGroupARNs:
       - Ref: WebAppTargetGroup
+
+  JumpLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          export DEBIAN_FRONTEND=noninteractive
+          apt-get update -y
+          apt-get install sl
+          echo "$(date) Success building Jump Launch Config" >> /tmp/status.txt
+      ImageId: ami-005bdb005fb00e791
+      KeyName: GranierConsulting
+      SecurityGroups:
+      - Ref: JumpSecGroup
+      InstanceType: t2.micro
+      BlockDeviceMappings:
+      - DeviceName: "/dev/sdk"
+        Ebs:
+          VolumeSize: '10'
+  JumpGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier:
+      - Fn::ImportValue:
+          !Sub "${EnvironmentName}-PUB1-SN"
+      LaunchConfigurationName:
+        Ref: JumpLaunchConfig
+      MinSize: '1'
+      MaxSize: '1'
 
   WebAppLB:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -120,9 +180,26 @@ Resources:
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 8
       HealthyThresholdCount: 2
-      Port: 8080
+      Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 5
       VpcId:
         Fn::ImportValue:
           Fn::Sub: "${EnvironmentName}-VPCID"
+
+Outputs:
+  WebAppLB:
+    Description: The LB Value
+    Value: !Ref WebAppLB
+    Export:
+      Name: !Sub ${EnvironmentName}-MYLB
+  DNS:
+    Description: Reference to the DNS name for the LB
+    Value: !GetAtt WebAppLB.DNSName
+    Export:
+      Name: !Sub ${EnvironmentName}-FQDN
+  URL:
+    Description: Reference to the DNS name for the LB
+    Value: !Join ["", ["http://", !GetAtt WebAppLB.DNSName]]
+    Export:
+      Name: !Sub ${EnvironmentName}-URL

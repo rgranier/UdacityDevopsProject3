@@ -1,8 +1,8 @@
 Description: >
       Randall Granier / Udacity Course
       PROJECT 3:  Servers
-      ./create.sh Project3ServerStack myservers.yml myserverparams.json
-      ./update.sh Project3ServerStack myservers.yml myserverparams.json
+      ./create.sh Project3ServerStack myservers.v2.0.yml myserverparams.json
+      ./update.sh Project3ServerStack myservers.v2.0.yml myserverparams.json
 
 Parameters:
 
@@ -63,12 +63,11 @@ Resources:
       KeyName: GranierConsulting
       SecurityGroups:
       - Ref: WebServerSecGroup
-      InstanceType: t3.medium
+      InstanceType: t2.small
       BlockDeviceMappings:
       - DeviceName: "/dev/sdk"
         Ebs:
           VolumeSize: '10'
-
   WebAppGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
@@ -77,8 +76,8 @@ Resources:
           !Sub "${EnvironmentName}-PRIV-NETS"
       LaunchConfigurationName:
         Ref: WebAppLaunchConfig
-      MinSize: '3'
-      MaxSize: '5'
+      MinSize: '4'
+      MaxSize: '4'
       TargetGroupARNs:
       - Ref: WebAppTargetGroup
 
@@ -120,7 +119,7 @@ Resources:
       HealthCheckProtocol: HTTP
       HealthCheckTimeoutSeconds: 8
       HealthyThresholdCount: 2
-      Port: 8080
+      Port: 80
       Protocol: HTTP
       UnhealthyThresholdCount: 5
       VpcId:
