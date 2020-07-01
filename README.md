@@ -1,8 +1,5 @@
 # UdacityDevopsProject3
 
-
-
-
 ## Link to the Repo
 https://github.com/rgranier/UdacityDevopsProject3.git
 
